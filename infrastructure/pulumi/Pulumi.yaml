@@ -1,0 +1,6 @@
+name: aidocs-assistant
+runtime:
+  name: python
+  options:
+    virtualenv: venv
+description: Infrastructure for AIDocs Assistant

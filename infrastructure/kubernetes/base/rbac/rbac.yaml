@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: aidocs-assistant-sa
+  namespace: aidocs-assistant
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: aidocs-assistant-role
+  namespace: aidocs-assistant
+rules:
+- apiGroups: [""]
+  resources: ["pods", "services", "secrets", "configmaps"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: aidocs-assistant-role-binding
+  namespace: aidocs-assistant
+subjects:
+- kind: ServiceAccount
+  name: aidocs-assistant-sa
+  namespace: aidocs-assistant
+roleRef:
+  kind: Role
+  name: aidocs-assistant-role
+  apiGroup: rbac.authorization.k8s.io 

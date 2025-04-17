@@ -1,0 +1,39 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: aidocs-assistant-monitor
+  namespace: aidocs-assistant
+spec:
+  selector:
+    matchLabels:
+      app: aidocs-assistant
+  endpoints:
+  - port: metrics
+    interval: 30s
+    path: /metrics
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: aidocs-assistant-alerts
+  namespace: aidocs-assistant
+spec:
+  groups:
+  - name: aidocs-assistant
+    rules:
+    - alert: HighErrorRate
+      expr: rate(http_requests_total{status=~"5.."}[5m]) > 0.1
+      for: 5m
+      labels:
+        severity: critical
+      annotations:
+        summary: High error rate on {{ $labels.instance }}
+        description: "Error rate is {{ $value }}"
+    - alert: HighLatency
+      expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 1
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: High latency on {{ $labels.instance }}
+        description: "95th percentile latency is {{ $value }}s" 

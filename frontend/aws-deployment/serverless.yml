@@ -1,0 +1,200 @@
+service: ai-file-assistant
+
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  runtime: nodejs18.x
+  region: ${opt:region, 'us-east-1'}
+  stage: ${opt:stage, 'dev'}
+  environment:
+    STAGE: ${self:provider.stage}
+    RESOURCES_TABLE: ${self:service}-resources-${self:provider.stage}
+    COLLECTIONS_TABLE: ${self:service}-collections-${self:provider.stage}
+    CHAT_THREADS_TABLE: ${self:service}-chat-threads-${self:provider.stage}
+    CHAT_MESSAGES_TABLE: ${self:service}-chat-messages-${self:provider.stage}
+    RESOURCES_BUCKET: ${self:service}-resources-${self:provider.stage}
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:Query
+            - dynamodb:Scan
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            - dynamodb:DeleteItem
+            - dynamodb:BatchGetItem
+          Resource:
+            - !GetAtt ResourcesTable.Arn
+            - !GetAtt CollectionsTable.Arn
+            - !GetAtt ChatThreadsTable.Arn
+            - !GetAtt ChatMessagesTable.Arn
+        - Effect: Allow
+          Action:
+            - s3:GetObject
+            - s3:PutObject
+            - s3:DeleteObject
+            - s3:ListBucket
+          Resource:
+            - !GetAtt ResourcesBucket.Arn
+            - !Join ['', [!GetAtt ResourcesBucket.Arn, '/*']]
+        - Effect: Allow
+          Action:
+            - bedrock:InvokeModel
+          Resource: '*'
+
+functions:
+  getResources:
+    handler: src/handlers/resources/getResources.handler
+    events:
+      - httpApi:
+          path: /resources
+          method: get
+  
+  createResource:
+    handler: src/handlers/resources/createResource.handler
+    events:
+      - httpApi:
+          path: /resources
+          method: post
+  
+  getCollections:
+    handler: src/handlers/collections/getCollections.handler
+    events:
+      - httpApi:
+          path: /collections
+          method: get
+  
+  createCollection:
+    handler: src/handlers/collections/createCollection.handler
+    events:
+      - httpApi:
+          path: /collections
+          method: post
+  
+  processChat:
+    handler: src/handlers/chat/processChat.handler
+    events:
+      - httpApi:
+          path: /chat
+          method: post
+  
+  getChatThreads:
+    handler: src/handlers/chat/getChatThreads.handler
+    events:
+      - httpApi:
+          path: /chat/threads
+          method: get
+  
+  getChatMessages:
+    handler: src/handlers/chat/getChatMessages.handler
+    events:
+      - httpApi:
+          path: /chat/threads/{threadId}/messages
+          method: get
+
+resources:
+  Resources:
+    ResourcesTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:provider.environment.RESOURCES_TABLE}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+          - AttributeName: collection
+            AttributeType: S
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: CollectionIndex
+            KeySchema:
+              - AttributeName: collection
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+    
+    CollectionsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:provider.environment.COLLECTIONS_TABLE}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+          - AttributeName: parentId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: ParentIdIndex
+            KeySchema:
+              - AttributeName: parentId
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+    
+    ChatThreadsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:provider.environment.CHAT_THREADS_TABLE}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+          - AttributeName: userId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: UserIdIndex
+            KeySchema:
+              - AttributeName: userId
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+    
+    ChatMessagesTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:provider.environment.CHAT_MESSAGES_TABLE}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+          - AttributeName: threadId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: ThreadIdIndex
+            KeySchema:
+              - AttributeName: threadId
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+    
+    ResourcesBucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: ${self:provider.environment.RESOURCES_BUCKET}
+        CorsConfiguration:
+          CorsRules:
+            - AllowedHeaders:
+                - '*'
+              AllowedMethods:
+                - GET
+                - PUT
+                - POST
+                - DELETE
+                - HEAD
+              AllowedOrigins:
+                - '*'
+              MaxAge: 3000

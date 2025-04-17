@@ -1,0 +1,21 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: aidocs-assistant-storage
+provisioner: kubernetes.io/aws-ebs
+parameters:
+  type: gp2
+  fsType: ext4
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: aidocs-assistant-pvc
+  namespace: aidocs-assistant
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: aidocs-assistant-storage
+  resources:
+    requests:
+      storage: 10Gi 

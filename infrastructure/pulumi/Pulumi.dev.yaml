@@ -1,0 +1,18 @@
+config:
+  aidocs-assistant:projectName:
+    value: aidocs-assistant
+  aidocs-assistant:environment:
+    value: dev
+  aidocs-assistant:vpcCidr:
+    value: 10.0.0.0/16
+  aidocs-assistant:allowedCidrBlocks:
+    value:
+      - 10.0.0.0/16
+  aidocs-assistant:dbName:
+    value: aidocs_assistant
+  aidocs-assistant:dbUsername:
+    value: aidocs_admin
+  aidocs-assistant:dbPassword:
+    value: your-secure-password
+  aidocs-assistant:alertEmail:
+    value: your-email@example.com 
