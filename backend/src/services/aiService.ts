@@ -1,134 +1,60 @@
-import { Document } from '../models/document';
-import { query } from '../db/connection';
+import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 import { logger } from '../utils/logger';
-import { AppError } from '../utils/errors';
-import { Configuration, OpenAIApi } from 'openai';
+import { AppError } from '../utils/errorHandler';
 
-class AIService {
-  private openai: OpenAIApi;
+const bedrockClient = new BedrockRuntimeClient({
+  region: process.env.AWS_REGION,
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+  },
+});
 
-  constructor() {
-    const configuration = new Configuration({
-      apiKey: process.env.OPENAI_API_KEY,
-    });
-    this.openai = new OpenAIApi(configuration);
+export class AIService {
+  private static readonly MODEL_ID = process.env.BEDROCK_MODEL_ID || 'anthropic.claude-v2';
+
+  static async generateResponse(prompt: string, context?: string) {
+    try {
+      const input = {
+        modelId: this.MODEL_ID,
+        contentType: 'application/json',
+        accept: 'application/json',
+        body: JSON.stringify({
+          prompt: context ? `${context}\n\n${prompt}` : prompt,
+          max_tokens_to_sample: 1000,
+          temperature: 0.7,
+          top_p: 0.9,
+        }),
+      };
+
+      const command = new InvokeModelCommand(input);
+      const response = await bedrockClient.send(command);
+      
+      const responseBody = JSON.parse(new TextDecoder().decode(response.body));
+      return responseBody.completion;
+    } catch (error) {
+      logger.error('Error in generateResponse:', error);
+      throw new AppError('Failed to generate AI response', 500);
+    }
   }
 
-  async analyzeDocument(documentId: string, userId: string): Promise<any> {
+  static async analyzeDocument(content: string) {
     try {
-      // Get document content
-      const result = await query(
-        'SELECT content, file_url FROM documents WHERE id = $1 AND user_id = $2',
-        [documentId, userId]
-      );
-
-      if (result.rows.length === 0) {
-        throw new AppError('Document not found', 404);
-      }
-
-      const document = result.rows[0];
-
-      // Analyze document using OpenAI
-      const response = await this.openai.createChatCompletion({
-        model: "gpt-4",
-        messages: [
-          {
-            role: "system",
-            content: "You are a document analysis assistant. Analyze the following document and provide a summary, key points, and any important insights."
-          },
-          {
-            role: "user",
-            content: document.content
-          }
-        ],
-        temperature: 0.7,
-        max_tokens: 1000
-      });
-
-      // Save analysis results
-      await query(
-        'UPDATE documents SET ai_analysis = $1, analyzed_at = NOW() WHERE id = $2',
-        [response.data.choices[0].message?.content, documentId]
-      );
-
-      return {
-        summary: response.data.choices[0].message?.content,
-        documentId,
-        analyzedAt: new Date()
-      };
+      const prompt = `Please analyze the following document and provide a summary of its key points:\n\n${content}`;
+      return await this.generateResponse(prompt);
     } catch (error) {
-      logger.error('Error analyzing document:', error);
+      logger.error('Error in analyzeDocument:', error);
       throw new AppError('Failed to analyze document', 500);
     }
   }
 
-  async generateDocumentSummary(documentId: string, userId: string): Promise<string> {
+  static async generateDocumentSummary(content: string) {
     try {
-      const result = await query(
-        'SELECT content FROM documents WHERE id = $1 AND user_id = $2',
-        [documentId, userId]
-      );
-
-      if (result.rows.length === 0) {
-        throw new AppError('Document not found', 404);
-      }
-
-      const response = await this.openai.createChatCompletion({
-        model: "gpt-4",
-        messages: [
-          {
-            role: "system",
-            content: "You are a document summarization assistant. Create a concise summary of the following document."
-          },
-          {
-            role: "user",
-            content: result.rows[0].content
-          }
-        ],
-        temperature: 0.5,
-        max_tokens: 500
-      });
-
-      return response.data.choices[0].message?.content || '';
+      const prompt = `Please provide a concise summary of the following document:\n\n${content}`;
+      return await this.generateResponse(prompt);
     } catch (error) {
-      logger.error('Error generating document summary:', error);
+      logger.error('Error in generateDocumentSummary:', error);
       throw new AppError('Failed to generate document summary', 500);
     }
   }
-
-  async answerQuestion(documentId: string, userId: string, question: string): Promise<string> {
-    try {
-      const result = await query(
-        'SELECT content FROM documents WHERE id = $1 AND user_id = $2',
-        [documentId, userId]
-      );
-
-      if (result.rows.length === 0) {
-        throw new AppError('Document not found', 404);
-      }
-
-      const response = await this.openai.createChatCompletion({
-        model: "gpt-4",
-        messages: [
-          {
-            role: "system",
-            content: "You are a document Q&A assistant. Answer the following question based on the document content."
-          },
-          {
-            role: "user",
-            content: `Document content: ${result.rows[0].content}\n\nQuestion: ${question}`
-          }
-        ],
-        temperature: 0.7,
-        max_tokens: 500
-      });
-
-      return response.data.choices[0].message?.content || '';
-    } catch (error) {
-      logger.error('Error answering question:', error);
-      throw new AppError('Failed to answer question', 500);
-    }
-  }
-}
-
-export const aiService = new AIService(); 
+} 

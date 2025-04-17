@@ -3,6 +3,9 @@ import jwt from 'jsonwebtoken';
 import { User } from '../models/user';
 import { UnauthorizedError, ValidationError, NotFoundError } from '../utils/errors';
 import config from '../config/config';
+import { CognitoIdentityProviderClient, SignUpCommand, ConfirmSignUpCommand, InitiateAuthCommand, ForgotPasswordCommand, ConfirmForgotPasswordCommand } from '@aws-sdk/client-cognito-identity-provider';
+import { logger } from '../utils/logger';
+import { AppError } from '../utils/errorHandler';
 
 export interface TokenPayload {
   userId: string;
@@ -15,9 +18,19 @@ export interface AuthTokens {
   refreshToken: string;
 }
 
+const cognitoClient = new CognitoIdentityProviderClient({
+  region: process.env.AWS_REGION,
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+  },
+});
+
 export class AuthService {
   private static readonly JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
   private static readonly JWT_EXPIRES_IN = '24h';
+  private static readonly USER_POOL_ID = process.env.COGNITO_USER_POOL_ID!;
+  private static readonly CLIENT_ID = process.env.COGNITO_CLIENT_ID!;
 
   private static generateTokens(payload: TokenPayload): AuthTokens {
     const accessToken = jwt.sign(
@@ -174,6 +187,93 @@ export class AuthService {
       await User.updateOne({ _id: decoded.userId }, { $set: { password: hashedPassword } });
     } catch (error) {
       throw new ValidationError('Invalid or expired reset token');
+    }
+  }
+
+  static async signUp(email: string, password: string, name: string) {
+    try {
+      const command = new SignUpCommand({
+        ClientId: this.CLIENT_ID,
+        Username: email,
+        Password: password,
+        UserAttributes: [
+          { Name: 'email', Value: email },
+          { Name: 'name', Value: name },
+        ],
+      });
+
+      const response = await cognitoClient.send(command);
+      return response;
+    } catch (error) {
+      logger.error('Error in signUp:', error);
+      throw new AppError('Failed to sign up user', 500);
+    }
+  }
+
+  static async confirmSignUp(email: string, code: string) {
+    try {
+      const command = new ConfirmSignUpCommand({
+        ClientId: this.CLIENT_ID,
+        Username: email,
+        ConfirmationCode: code,
+      });
+
+      const response = await cognitoClient.send(command);
+      return response;
+    } catch (error) {
+      logger.error('Error in confirmSignUp:', error);
+      throw new AppError('Failed to confirm sign up', 500);
+    }
+  }
+
+  static async signIn(email: string, password: string) {
+    try {
+      const command = new InitiateAuthCommand({
+        AuthFlow: 'USER_PASSWORD_AUTH',
+        ClientId: this.CLIENT_ID,
+        AuthParameters: {
+          USERNAME: email,
+          PASSWORD: password,
+        },
+      });
+
+      const response = await cognitoClient.send(command);
+      return response;
+    } catch (error) {
+      logger.error('Error in signIn:', error);
+      throw new AppError('Failed to sign in', 401);
+    }
+  }
+
+  static async forgotPassword(email: string) {
+    try {
+      const command = new ForgotPasswordCommand({
+        ClientId: this.CLIENT_ID,
+        Username: email,
+      });
+
+      const response = await cognitoClient.send(command);
+      return response;
+    } catch (error) {
+      logger.error('Error in forgotPassword:', error);
+      throw new AppError('Failed to initiate password reset', 500);
+    }
+  }
+
+  static async confirmForgotPassword(email: string, code: string, newPassword: string) {
+    try {
+      const command = new ConfirmForgotPasswordCommand({
+        ClientId: this.CLIENT_ID,
+        Username: email,
+        ConfirmationCode: code,
+        Password: newPassword,
+      });
+
+      const response = await cognitoClient.send(command);
+      return response;
+    } catch (error) {
+      logger.error('Error in confirmForgotPassword:', error);
+      throw new AppError('Failed to reset password', 500);
     }
   }
 } 
